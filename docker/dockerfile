@@ -1,0 +1,71 @@
+FROM opensandbox/code-interpreter:v1.0.2
+
+USER root
+
+# System tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    wget \
+    jq \
+    zip \
+    unzip \
+    sqlite3 \
+    ffmpeg \
+    imagemagick \
+    graphviz \
+    && rm -rf /var/lib/apt/lists/*
+
+# Add the full Python install to PATH so pip/python resolve correctly
+ENV PATH="/opt/python/versions/cpython-3.14.2-linux-aarch64-gnu/bin:${PATH}"
+
+# Python packages
+RUN pip install --no-cache-dir --break-system-packages \
+    # Data & spreadsheets
+    openpyxl \
+    pandas \
+    xlsxwriter \
+    python-docx \
+    # Visualization
+    matplotlib \
+    seaborn \
+    plotly \
+    # Web & APIs
+    requests \
+    httpx \
+    beautifulsoup4 \
+    lxml \
+    # Data formats
+    pyyaml \
+    toml \
+    python-dotenv \
+    # PDF
+    reportlab \
+    fpdf2 \
+    PyPDF2 \
+    # Images
+    Pillow \
+    # CSV / tabular
+    tabulate \
+    csvkit \
+    # Science & math
+    numpy \
+    scipy \
+    # Misc utilities
+    jinja2 \
+    pydantic \
+    rich \
+    tqdm
+
+# Browser automation
+RUN apt-get update && apt-get install -y --no-install-recommends chromium \
+    && rm -rf /var/lib/apt/lists/* \
+    && npm install -g agent-browser
+
+ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
+
+# Workspace setup
+RUN mkdir -p /workspace/.agent-browser-profile /workspace/output /tmp/output
+WORKDIR /workspace
+
+ENV AGENT_BROWSER_PROFILE=/workspace/.agent-browser-profile
+ENV AGENT_BROWSER_IDLE_TIMEOUT_MS=300000
