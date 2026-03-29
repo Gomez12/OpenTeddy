@@ -8,6 +8,7 @@ term, strictly following the etim-lookup skill instructions.
 import sys
 from baseagent import create_agent, run_agent
 
+
 agent = create_agent(
     system_prompt=(
         "You are an ETIM classification specialist. Your sole purpose is to find the correct "
@@ -23,6 +24,4 @@ agent = create_agent(
 
 if __name__ == "__main__":
     product = " ".join(sys.argv[1:]) if len(sys.argv) > 1 else "LED lamp"
-    query = f"Give me the best ETIM Class for {product}, if you are unsure then return me the options"
-    sys.argv = [sys.argv[0], query]
-    run_agent(agent, default_query=query)
+    run_agent(agent, query=f"Give me the best ETIM Class for {product}, if you are unsure then return me the options")

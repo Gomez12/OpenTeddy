@@ -39,6 +39,20 @@ def _get_sandbox() -> SandboxSync:
     return _sandbox
 
 
+def _format_result(result) -> str:
+    """Format sandbox execution result into a readable string."""
+    output_parts = []
+    if result.logs.stdout:
+        output_parts.append("".join(m.text for m in result.logs.stdout))
+    if result.logs.stderr:
+        output_parts.append("STDERR:\n" + "".join(m.text for m in result.logs.stderr))
+    if result.error:
+        output_parts.append(f"ERROR: {result.error.name}: {result.error.value}")
+    if result.exit_code and result.exit_code != 0:
+        output_parts.append(f"Exit code: {result.exit_code}")
+    return "\n".join(output_parts) if output_parts else "(no output)"
+
+
 def run_code(code: str, language: str = "python") -> str:
     """Execute code in an isolated sandbox and return the output.
 
@@ -82,18 +96,7 @@ def run_code(code: str, language: str = "python") -> str:
     }
     cmd = lang_cmds.get(language, f"python3 /tmp/run_code.py")
     result = sandbox.commands.run(cmd, opts=RunCommandOpts(timeout=DEFAULT_TIMEOUT))
-
-    output_parts = []
-    if result.logs.stdout:
-        output_parts.append("".join(m.text for m in result.logs.stdout))
-    if result.logs.stderr:
-        output_parts.append("STDERR:\n" + "".join(m.text for m in result.logs.stderr))
-    if result.error:
-        output_parts.append(f"ERROR: {result.error.name}: {result.error.value}")
-    if result.exit_code and result.exit_code != 0:
-        output_parts.append(f"Exit code: {result.exit_code}")
-
-    return "\n".join(output_parts) if output_parts else "(no output)"
+    return _format_result(result)
 
 
 def run_shell(command: str) -> str:
@@ -119,16 +122,7 @@ def run_shell(command: str) -> str:
     """
     sandbox = _get_sandbox()
     result = sandbox.commands.run(command, opts=RunCommandOpts(timeout=DEFAULT_TIMEOUT))
-
-    output_parts = []
-    if result.logs.stdout:
-        output_parts.append("".join(m.text for m in result.logs.stdout))
-    if result.logs.stderr:
-        output_parts.append("STDERR:\n" + "".join(m.text for m in result.logs.stderr))
-    if result.exit_code and result.exit_code != 0:
-        output_parts.append(f"Exit code: {result.exit_code}")
-
-    return "\n".join(output_parts) if output_parts else "(no output)"
+    return _format_result(result)
 
 
 def write_sandbox_file(path: str, content: str) -> str:

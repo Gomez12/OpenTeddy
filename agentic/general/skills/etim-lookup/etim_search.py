@@ -23,6 +23,7 @@ EMBED_MODEL_NAME = os.environ.get("EMBED_MODEL_NAME", "multilingual-e5-base")
 
 _local_model = None
 _db: lancedb.DBConnection | None = None
+_api_available: bool | None = None  # None = not tested yet
 
 
 def _embed_via_api(text: str) -> list[float]:
@@ -58,11 +59,14 @@ def _embed_local(text: str) -> list[float]:
 
 def _embed(text: str) -> list[float]:
     """Get embedding vector, preferring API server, falling back to local model."""
-    if EMBED_API_BASE:
+    global _api_available
+    if EMBED_API_BASE and _api_available is not False:
         try:
-            return _embed_via_api(text)
+            result = _embed_via_api(text)
+            _api_available = True
+            return result
         except (URLError, OSError):
-            pass  # Fall through to local
+            _api_available = False
     return _embed_local(text)
 
 
@@ -71,6 +75,15 @@ def _get_db() -> lancedb.DBConnection:
     if _db is None:
         _db = lancedb.connect(str(LANCEDB_PATH))
     return _db
+
+
+_tables: dict[str, object] = {}
+
+
+def _get_table(name: str):
+    if name not in _tables:
+        _tables[name] = _get_db().open_table(name)
+    return _tables[name]
 
 
 def search_etim_groups(query: str, top_k: int = 50) -> str:
@@ -83,8 +96,7 @@ def search_etim_groups(query: str, top_k: int = 50) -> str:
     Returns:
         Formatted string with matching ETIM groups, their codes, and descriptions.
     """
-    db = _get_db()
-    table = db.open_table("etim_groups")
+    table = _get_table("etim_groups")
     vec = _embed(query)
     results = table.search(vec).limit(top_k).to_pandas()
 
@@ -109,8 +121,7 @@ def search_etim_classes(query: str, top_k: int = 50) -> str:
         Formatted string with matching ETIM classes, their codes, group codes,
         descriptions, synonyms, and relevant features.
     """
-    db = _get_db()
-    table = db.open_table("etim_classes")
+    table = _get_table("etim_classes")
     vec = _embed(query)
     results = table.search(vec).limit(top_k).to_pandas()
 

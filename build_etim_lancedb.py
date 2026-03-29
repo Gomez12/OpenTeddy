@@ -222,25 +222,32 @@ def parse_classes(xml_path: str, feature_lookup: dict[str, str]) -> list[dict]:
 
 
 # ── Embedding ───────────────────────────────────────────────────────────────
-def get_embeddings(texts: list[str], batch_size: int) -> list[list[float]]:
-    """Generate embeddings via API server, falling back to local model."""
+def _check_api_available() -> bool:
+    """Test if the embedding API server is reachable."""
+    if not EMBED_API_BASE:
+        return False
+    try:
+        _embed_batch_via_api(["test"])
+        print(f"  Embedding API available at {EMBED_API_BASE}")
+        return True
+    except (URLError, OSError) as e:
+        print(f"  Embedding API not available ({e}), using local model")
+        return False
+
+
+def get_embeddings(texts: list[str], batch_size: int, use_api: bool) -> list[list[float]]:
+    """Generate embeddings via API server or local model."""
     print(f"  Encoding {len(texts)} texts (batch_size={batch_size}) ...")
 
-    if EMBED_API_BASE:
-        try:
-            # Test the API with a single text first
-            _embed_batch_via_api(["test"])
-            print(f"  Using embedding API at {EMBED_API_BASE}")
-            all_vectors = []
-            for i in range(0, len(texts), batch_size):
-                batch = texts[i : i + batch_size]
-                vectors = _embed_batch_via_api(batch)
-                all_vectors.extend(vectors)
-                if (i // batch_size) % 10 == 0:
-                    print(f"    {i + len(batch)}/{len(texts)}")
-            return all_vectors
-        except (URLError, OSError) as e:
-            print(f"  API not available ({e}), falling back to local model")
+    if use_api:
+        all_vectors = []
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i : i + batch_size]
+            vectors = _embed_batch_via_api(batch)
+            all_vectors.extend(vectors)
+            if (i // batch_size) % 10 == 0:
+                print(f"    {i + len(batch)}/{len(texts)}")
+        return all_vectors
 
     model = _get_local_model()
     vectors = model.encode(texts, batch_size=batch_size, show_progress_bar=True, normalize_embeddings=True)
@@ -253,30 +260,27 @@ def main():
     xml_path = download_xml(date_or_path)
 
     _, batch_size = _detect_device()
+    use_api = _check_api_available()
 
-    # 1. Parse features lookup (need two passes since features come before classes)
     print("Parsing features ...")
     feature_lookup = parse_features_lookup(xml_path)
     print(f"  {len(feature_lookup)} features loaded")
 
-    # 2. Parse groups
     print("Parsing groups ...")
     groups = parse_groups(xml_path)
     print(f"  {len(groups)} groups")
 
-    # 3. Parse classes
     print("Parsing classes ...")
     classes = parse_classes(xml_path, feature_lookup)
     print(f"  {len(classes)} classes")
 
-    # 4. Generate embeddings
     print("Generating embeddings for groups ...")
-    group_vectors = get_embeddings([g["search_text"] for g in groups], batch_size)
+    group_vectors = get_embeddings([g["search_text"] for g in groups], batch_size, use_api)
     for g, vec in zip(groups, group_vectors):
         g["vector"] = vec
 
     print("Generating embeddings for classes ...")
-    class_vectors = get_embeddings([c["search_text"] for c in classes], batch_size)
+    class_vectors = get_embeddings([c["search_text"] for c in classes], batch_size, use_api)
     for c, vec in zip(classes, class_vectors):
         c["vector"] = vec
 

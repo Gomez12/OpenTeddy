@@ -39,14 +39,17 @@ class LLMLogger(BaseCallbackHandler):
     def __init__(self):
         LOGS_DIR.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self._log_file = LOGS_DIR / f"llm_{timestamp}.jsonl"
+        log_path = LOGS_DIR / f"llm_{timestamp}.jsonl"
+        self._file = open(log_path, "a", encoding="utf-8")
+
+    def __del__(self):
+        if hasattr(self, "_file") and not self._file.closed:
+            self._file.close()
 
     def _write(self, entry: dict):
         entry["timestamp"] = datetime.now(timezone.utc).isoformat()
-        with open(self._log_file, "a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, default=_serialize, ensure_ascii=False) + "\n")
-
-    # -- LLM events --
+        self._file.write(json.dumps(entry, default=_serialize, ensure_ascii=False) + "\n")
+        self._file.flush()
 
     def on_llm_start(self, serialized, prompts, *, run_id, parent_run_id=None, **kwargs):
         self._write({
@@ -95,8 +98,6 @@ class LLMLogger(BaseCallbackHandler):
             "error": _serialize(error),
         })
 
-    # -- Tool events --
-
     def on_tool_start(self, serialized, input_str, *, run_id, parent_run_id=None, **kwargs):
         self._write({
             "event": "tool_start",
@@ -121,8 +122,6 @@ class LLMLogger(BaseCallbackHandler):
             "parent_run_id": parent_run_id,
             "error": _serialize(error),
         })
-
-    # -- Chain events (captures agent reasoning steps) --
 
     def on_chain_start(self, serialized, inputs, *, run_id, parent_run_id=None, **kwargs):
         self._write({

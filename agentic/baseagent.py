@@ -27,8 +27,6 @@ def _load_module(name, path):
     spec.loader.exec_module(mod)
     return mod
 
-# --- Load shared tools ---
-
 _AGENTIC_DIR = Path(__file__).resolve().parent
 _GENERAL_DIR = _AGENTIC_DIR / "general"
 
@@ -51,8 +49,6 @@ ReadOnlyBackend = _readonly_mod.ReadOnlyBackend
 
 SKILLS_DIR = str(_GENERAL_DIR / "skills")
 FILES_DIR = str(_GENERAL_DIR / "files")
-
-# --- Shared system prompt fragments ---
 
 SKILLS_PROMPT = (
     "SKILLS — IMPORTANT:\n"
@@ -115,16 +111,26 @@ def create_agent(system_prompt: str, extra_tools: list | None = None):
     )
 
 
-def run_agent(agent, default_query: str = "Hallo, wat kan je voor me doen?"):
+def run_agent(agent, default_query: str = "Hallo, wat kan je voor me doen?", query: str | None = None):
     """Run an agent from the command line with logging and timing.
 
-    With CLI args: prints only the text response.
-    Without args: uses default_query and prints the full result.
+    Args:
+        agent: The agent to invoke.
+        default_query: Fallback query when no CLI args and no explicit query.
+        query: Explicit query string. If provided, CLI args are ignored and
+            output is text-only (same as CLI arg mode).
     """
     from logger import LLMLogger
 
-    has_arg = len(sys.argv) > 1
-    query = " ".join(sys.argv[1:]) if has_arg else default_query
+    if query is not None:
+        text_only = True
+    elif len(sys.argv) > 1:
+        query = " ".join(sys.argv[1:])
+        text_only = True
+    else:
+        query = default_query
+        text_only = False
+
     logger = LLMLogger()
     start = time.time()
     result = agent.invoke(
@@ -132,7 +138,7 @@ def run_agent(agent, default_query: str = "Hallo, wat kan je voor me doen?"):
         config={"configurable": {"thread_id": "demo"}, "callbacks": [logger]},
     )
     elapsed = time.time() - start
-    if has_arg:
+    if text_only:
         content = result["messages"][-1].content
         if isinstance(content, list):
             print("\n".join(block["text"] for block in content if block.get("type") == "text"))
