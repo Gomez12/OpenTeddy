@@ -49,11 +49,11 @@ Perform at least 2 group searches with different queries to be sure:
 Identify the top 1-10 most likely groups. Note their EG codes -- you will use these
 to validate your class results later.
 
-### Phase 2: Find the right class (MANDATORY: at least 5 searches)
+### Phase 2: Find the right class (MANDATORY: at maximum 10 searches)
 
-You MUST call `search_etim_classes` at least 5 times, each with a semantically
+You MUST call `search_etim_classes` until you are certain you have the best result, but at most 10 times, each with a semantically
 different query. This is non-negotiable -- even if an early result looks promising,
-you must complete all 5 searches before drawing conclusions. The goal is to cast a
+you must be certain it is the best before drawing conclusions. The goal is to cast a
 wide net and ensure the best possible match.
 
 For each search, vary the query using a different angle:

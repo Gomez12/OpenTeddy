@@ -17,6 +17,7 @@ Usage:
     python build_etim_lancedb.py /path/to.xml # use a local XML file
 """
 
+import json
 import os
 import platform
 import sys
@@ -24,27 +25,66 @@ import zipfile
 import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.request import urlopen, Request
+from urllib.error import URLError
 from xml.etree.ElementTree import iterparse
 
 import httpx
 import lancedb
-import torch
-from sentence_transformers import SentenceTransformer
+
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # ── Config ──────────────────────────────────────────────────────────────────
-LANCEDB_PATH = Path(__file__).parent / "agentic" / "general" / "lancedbs" / "etimdynamic"
+PROJECT_ROOT = Path(__file__).parent
+LANCEDB_PATH = PROJECT_ROOT / "agentic" / "general" / "lancedbs" / "etimdynamic"
 CDN_URL = "https://cdn.etim-international.com/exports/ETIMIXF3_1_{date}.zip"
 NS = "https://www.etim-international.com/etimixf/31"
+EMBED_API_BASE = os.environ.get("EMBED_API_BASE", "")
+EMBED_MODEL_NAME = os.environ.get("EMBED_MODEL_NAME", "multilingual-e5-base")
 EMBED_MODEL = os.environ.get("EMBED_MODEL", "intfloat/multilingual-e5-base")
+
+_local_model = None
 
 
 def _detect_device() -> tuple[str, int]:
     """Pick the best available device and a matching batch size."""
+    import torch
+
     if platform.system() == "Darwin" and torch.backends.mps.is_available():
         return "mps", 64
     if torch.cuda.is_available():
         return "cuda", 64
     return "cpu", 8
+
+
+def _embed_batch_via_api(texts: list[str]) -> list[list[float]]:
+    """Get embeddings from the OpenAI-compatible embedding server."""
+    url = f"{EMBED_API_BASE}/v1/embeddings"
+    payload = json.dumps({"input": texts, "model": EMBED_MODEL_NAME}).encode()
+    req = Request(url, data=payload, headers={"Content-Type": "application/json"})
+    with urlopen(req, timeout=300) as resp:
+        data = json.loads(resp.read())
+    # Sort by index to ensure correct order
+    sorted_data = sorted(data["data"], key=lambda x: x["index"])
+    return [d["embedding"] for d in sorted_data]
+
+
+def _get_local_model():
+    """Load the local sentence-transformers model (lazy)."""
+    global _local_model
+    if _local_model is None:
+        import torch
+        from sentence_transformers import SentenceTransformer
+
+        _embed_model_path = PROJECT_ROOT / EMBED_MODEL
+        model_path = str(_embed_model_path) if _embed_model_path.is_dir() else EMBED_MODEL
+
+        device, _ = _detect_device()
+        print(f"Loading local embedding model: {model_path} on {device} ...")
+        _local_model = SentenceTransformer(model_path, device=device)
+    return _local_model
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
@@ -182,9 +222,27 @@ def parse_classes(xml_path: str, feature_lookup: dict[str, str]) -> list[dict]:
 
 
 # ── Embedding ───────────────────────────────────────────────────────────────
-def get_embeddings(texts: list[str], model: SentenceTransformer, batch_size: int) -> list[list[float]]:
-    """Generate embeddings locally with sentence-transformers."""
+def get_embeddings(texts: list[str], batch_size: int) -> list[list[float]]:
+    """Generate embeddings via API server, falling back to local model."""
     print(f"  Encoding {len(texts)} texts (batch_size={batch_size}) ...")
+
+    if EMBED_API_BASE:
+        try:
+            # Test the API with a single text first
+            _embed_batch_via_api(["test"])
+            print(f"  Using embedding API at {EMBED_API_BASE}")
+            all_vectors = []
+            for i in range(0, len(texts), batch_size):
+                batch = texts[i : i + batch_size]
+                vectors = _embed_batch_via_api(batch)
+                all_vectors.extend(vectors)
+                if (i // batch_size) % 10 == 0:
+                    print(f"    {i + len(batch)}/{len(texts)}")
+            return all_vectors
+        except (URLError, OSError) as e:
+            print(f"  API not available ({e}), falling back to local model")
+
+    model = _get_local_model()
     vectors = model.encode(texts, batch_size=batch_size, show_progress_bar=True, normalize_embeddings=True)
     return vectors.tolist()
 
@@ -194,10 +252,7 @@ def main():
     date_or_path = sys.argv[1] if len(sys.argv) > 1 else None
     xml_path = download_xml(date_or_path)
 
-    device, batch_size = _detect_device()
-    print(f"Device: {device} | batch_size: {batch_size}")
-    print(f"Loading embedding model: {EMBED_MODEL} ...")
-    model = SentenceTransformer(EMBED_MODEL, device=device)
+    _, batch_size = _detect_device()
 
     # 1. Parse features lookup (need two passes since features come before classes)
     print("Parsing features ...")
@@ -216,12 +271,12 @@ def main():
 
     # 4. Generate embeddings
     print("Generating embeddings for groups ...")
-    group_vectors = get_embeddings([g["search_text"] for g in groups], model, batch_size)
+    group_vectors = get_embeddings([g["search_text"] for g in groups], batch_size)
     for g, vec in zip(groups, group_vectors):
         g["vector"] = vec
 
     print("Generating embeddings for classes ...")
-    class_vectors = get_embeddings([c["search_text"] for c in classes], model, batch_size)
+    class_vectors = get_embeddings([c["search_text"] for c in classes], batch_size)
     for c, vec in zip(classes, class_vectors):
         c["vector"] = vec
 

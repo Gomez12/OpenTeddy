@@ -11,6 +11,7 @@ from pathlib import Path
 
 from opensandbox.sync import SandboxSync
 from opensandbox.config.connection_sync import ConnectionConfigSync
+from opensandbox.models.execd import RunCommandOpts
 
 _sandbox: SandboxSync | None = None
 
@@ -19,6 +20,7 @@ SANDBOX_HOST = os.environ.get("SANDBOX_HOST", "localhost")
 SANDBOX_PORT = os.environ.get("SANDBOX_PORT", "8080")
 FILES_OUT_DIR = Path(__file__).resolve().parent.parent / "files" / "out"
 FILES_IN_DIR = Path(__file__).resolve().parent.parent / "files" / "in"
+DEFAULT_TIMEOUT = timedelta(seconds=int(os.environ.get("SANDBOX_TIMEOUT", "120")))
 
 
 def _get_sandbox() -> SandboxSync:
@@ -79,7 +81,7 @@ def run_code(code: str, language: str = "python") -> str:
         "go": "go run /tmp/run_code.go",
     }
     cmd = lang_cmds.get(language, f"python3 /tmp/run_code.py")
-    result = sandbox.commands.run(cmd)
+    result = sandbox.commands.run(cmd, opts=RunCommandOpts(timeout=DEFAULT_TIMEOUT))
 
     output_parts = []
     if result.logs.stdout:
@@ -116,7 +118,7 @@ def run_shell(command: str) -> str:
         The combined stdout/stderr output and exit code.
     """
     sandbox = _get_sandbox()
-    result = sandbox.commands.run(command)
+    result = sandbox.commands.run(command, opts=RunCommandOpts(timeout=DEFAULT_TIMEOUT))
 
     output_parts = []
     if result.logs.stdout:

@@ -13,7 +13,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     imagemagick \
     graphviz \
+    chromium \
     && rm -rf /var/lib/apt/lists/*
+
+
 
 # Add the full Python install to PATH so pip/python resolve correctly
 ENV PATH="/opt/python/versions/cpython-3.14.2-linux-aarch64-gnu/bin:${PATH}"
@@ -57,11 +60,9 @@ RUN pip install --no-cache-dir --break-system-packages \
     tqdm
 
 # Browser automation
-RUN apt-get update && apt-get install -y --no-install-recommends chromium \
-    && rm -rf /var/lib/apt/lists/* \
-    && npm install -g agent-browser
+RUN npm install -g agent-browser
 
-ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
+ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
 # Workspace setup
 RUN mkdir -p /workspace/.agent-browser-profile /workspace/output /tmp/output
