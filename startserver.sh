@@ -51,10 +51,27 @@ uv run uvicorn agentic.servers.embedding_server:app \
     --log-level info &
 PIDS+=($!)
 
+# --- Chat API server ---
+CHAT_PORT="${CHAT_PORT:-8200}"
+echo "Starting Chat API server on port ${CHAT_PORT}..."
+uv run uvicorn agentic.servers.chat_server:app \
+    --host 0.0.0.0 \
+    --port "$CHAT_PORT" \
+    --log-level info &
+PIDS+=($!)
+
+# --- Frontend static server ---
+FRONTEND_PORT="${FRONTEND_PORT:-3000}"
+echo "Starting Frontend on port ${FRONTEND_PORT}..."
+python3 -m http.server "$FRONTEND_PORT" --directory frontend --bind 0.0.0.0 &
+PIDS+=($!)
+
 echo ""
 echo "Services running:"
 echo "  OpenSandbox : http://localhost:8080"
 echo "  Embeddings  : http://localhost:${EMBED_PORT}/v1/embeddings"
+echo "  Chat API    : http://localhost:${CHAT_PORT}/api/chat"
+echo "  Frontend    : http://localhost:${FRONTEND_PORT}"
 echo ""
 echo "Press Ctrl-C to stop all services."
 echo ""
