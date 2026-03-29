@@ -211,3 +211,4 @@ agentic/general/files/out/*
 agentic/general/lancedbs/etimdynamic/*
 agentic/logs/*
 models/**
+models/multilingual-e5-base/model.safetensors
