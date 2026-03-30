@@ -135,18 +135,76 @@ def download_xml(date_str: str | None) -> str:
 
 
 # ── XML parsing ─────────────────────────────────────────────────────────────
-def parse_features_lookup(xml_path: str) -> dict[str, str]:
-    """Build a dict of feature_code -> EN description for enriching classes."""
+def get_abbreviation(translations_el, lang: str) -> str:
+    """Return the unit abbreviation for a language."""
+    if translations_el is None:
+        return ""
+    for tr in translations_el:
+        if tr.get("language") == lang:
+            abbr_el = tr.find(tag("Abbreviation"))
+            return abbr_el.text if abbr_el is not None and abbr_el.text else ""
+    return ""
+
+
+def parse_features_lookup(xml_path: str) -> dict[str, dict]:
+    """Build a dict of feature_code -> {code, type, en, nl} for enriching classes."""
     features = {}
     for event, elem in iterparse(xml_path, events=("end",)):
         if elem.tag == tag("Feature") and elem.find(tag("Code")) is not None:
             code_el = elem.find(tag("Code"))
             if code_el is not None and code_el.text and code_el.text.startswith("EF"):
+                type_el = elem.find(tag("Type"))
                 desc_en, _ = get_translation(elem.find(tag("Translations")), "EN")
-                if desc_en:
-                    features[code_el.text] = desc_en
+                desc_nl, _ = get_translation(elem.find(tag("Translations")), "nl-BE")
+                if desc_en or desc_nl:
+                    features[code_el.text] = {
+                        "code": code_el.text,
+                        "type": type_el.text if type_el is not None else "",
+                        "en": desc_en,
+                        "nl": desc_nl or desc_en,
+                    }
             elem.clear()
     return features
+
+
+def parse_units_lookup(xml_path: str) -> dict[str, dict]:
+    """Build a dict of unit_code -> {code, en, nl, abbr}."""
+    units = {}
+    for event, elem in iterparse(xml_path, events=("end",)):
+        if elem.tag == tag("Unit") and elem.find(tag("Code")) is not None:
+            code_el = elem.find(tag("Code"))
+            if code_el is not None and code_el.text and code_el.text.startswith("EU"):
+                translations = elem.find(tag("Translations"))
+                desc_en, _ = get_translation(translations, "EN")
+                desc_nl, _ = get_translation(translations, "nl-BE")
+                abbr = get_abbreviation(translations, "EN")
+                units[code_el.text] = {
+                    "code": code_el.text,
+                    "en": desc_en,
+                    "nl": desc_nl or desc_en,
+                    "abbr": abbr,
+                }
+            elem.clear()
+    return units
+
+
+def parse_values_lookup(xml_path: str) -> dict[str, dict]:
+    """Build a dict of value_code -> {code, en, nl}."""
+    values = {}
+    for event, elem in iterparse(xml_path, events=("end",)):
+        if elem.tag == tag("Value") and elem.find(tag("Code")) is not None:
+            code_el = elem.find(tag("Code"))
+            if code_el is not None and code_el.text and code_el.text.startswith("EV"):
+                translations = elem.find(tag("Translations"))
+                desc_en, _ = get_translation(translations, "EN")
+                desc_nl, _ = get_translation(translations, "nl-BE")
+                values[code_el.text] = {
+                    "code": code_el.text,
+                    "en": desc_en,
+                    "nl": desc_nl or desc_en,
+                }
+            elem.clear()
+    return values
 
 
 def parse_groups(xml_path: str) -> list[dict]:
@@ -172,7 +230,7 @@ def parse_groups(xml_path: str) -> list[dict]:
     return rows
 
 
-def parse_classes(xml_path: str, feature_lookup: dict[str, str]) -> list[dict]:
+def parse_classes(xml_path: str, feature_lookup: dict[str, dict], unit_lookup: dict[str, dict], value_lookup: dict[str, dict]) -> list[dict]:
     rows = []
     for event, elem in iterparse(xml_path, events=("end",)):
         if elem.tag != tag("Class"):
@@ -190,16 +248,45 @@ def parse_classes(xml_path: str, feature_lookup: dict[str, str]) -> list[dict]:
         desc_en, syns_en = get_translation(translations, "EN")
         desc_nl, syns_nl = get_translation(translations, "nl-BE")
 
-        # Collect feature descriptions for this class
+        # Collect structured feature data for this class
         features_el = elem.find(tag("Features"))
+        features_json = []
         feature_descs = []
         if features_el is not None:
-            for feat in features_el:
+            for feat in sorted(features_el, key=lambda f: int(f.findtext(tag("OrderNumber")) or "999")):
                 fc_el = feat.find(tag("FeatureCode"))
-                if fc_el is not None and fc_el.text and fc_el.text in feature_lookup:
-                    feature_descs.append(feature_lookup[fc_el.text])
+                if fc_el is None or not fc_el.text or fc_el.text not in feature_lookup:
+                    continue
+                # Skip features marked for deletion
+                if "deleted" in (feat.get("changeCode") or "").lower():
+                    continue
+                f_info = feature_lookup[fc_el.text]
+                uc_el = feat.find(tag("UnitCode"))
+                unit = unit_lookup.get(uc_el.text, {}) if uc_el is not None and uc_el.text else {}
 
-        features_text = ", ".join(feature_descs[:30])  # cap to keep embedding text reasonable
+                # Collect allowed values (EV codes) for this class-feature
+                allowed_values = []
+                values_el = feat.find(tag("Values"))
+                if values_el is not None:
+                    for val in sorted(values_el, key=lambda v: int(v.findtext(tag("OrderNumber")) or "999")):
+                        vc_el = val.find(tag("ValueCode"))
+                        if vc_el is not None and vc_el.text and vc_el.text in value_lookup:
+                            allowed_values.append(value_lookup[vc_el.text])
+
+                feat_entry = {
+                    "code": f_info["code"],
+                    "type": f_info["type"],
+                    "en": f_info["en"],
+                    "nl": f_info["nl"],
+                    "unit": unit.get("abbr", ""),
+                }
+                if allowed_values:
+                    feat_entry["allowed_values"] = allowed_values
+                features_json.append(feat_entry)
+                feature_descs.append(f_info["en"])
+
+        import json
+        features_text = ", ".join(feature_descs[:30])
         synonyms_en = ", ".join(syns_en)
         synonyms_nl = ", ".join(syns_nl)
 
@@ -215,6 +302,7 @@ def parse_classes(xml_path: str, feature_lookup: dict[str, str]) -> list[dict]:
             "synonyms_en": synonyms_en,
             "synonyms_nl": synonyms_nl,
             "features_text": features_text,
+            "features_json": json.dumps(features_json, ensure_ascii=False),
             "search_text": search_text,
         })
         elem.clear()
@@ -266,12 +354,20 @@ def main():
     feature_lookup = parse_features_lookup(xml_path)
     print(f"  {len(feature_lookup)} features loaded")
 
+    print("Parsing units ...")
+    unit_lookup = parse_units_lookup(xml_path)
+    print(f"  {len(unit_lookup)} units loaded")
+
+    print("Parsing values ...")
+    value_lookup = parse_values_lookup(xml_path)
+    print(f"  {len(value_lookup)} values loaded")
+
     print("Parsing groups ...")
     groups = parse_groups(xml_path)
     print(f"  {len(groups)} groups")
 
     print("Parsing classes ...")
-    classes = parse_classes(xml_path, feature_lookup)
+    classes = parse_classes(xml_path, feature_lookup, unit_lookup, value_lookup)
     print(f"  {len(classes)} classes")
 
     print("Generating embeddings for groups ...")

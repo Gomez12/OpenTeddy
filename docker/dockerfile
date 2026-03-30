@@ -13,8 +13,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     imagemagick \
     graphviz \
-    chromium \
+    gnupg \
     && rm -rf /var/lib/apt/lists/*
+
+# Chromium via playwright (reliable ARM64 build, no snap dependency)
+RUN npm install -g playwright \
+    && npx playwright install --with-deps chromium \
+    && ln -sf /root/.cache/ms-playwright/chromium-*/chrome-linux/chrome /usr/local/bin/chromium
 
 
 
@@ -62,7 +67,7 @@ RUN pip install --no-cache-dir --break-system-packages \
 # Browser automation
 RUN npm install -g agent-browser
 
-ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/local/bin/chromium
 
 # Workspace setup
 RUN mkdir -p /workspace/.agent-browser-profile /workspace/output /tmp/output

@@ -37,6 +37,7 @@ _readonly_mod = _load_module("readonly_backend", _GENERAL_DIR / "tools" / "reado
 SHARED_TOOLS = [
     _etim_search.search_etim_groups,
     _etim_search.search_etim_classes,
+    _etim_search.get_class_features,
     _sandbox.run_code,
     _sandbox.run_shell,
     _sandbox.write_sandbox_file,
@@ -111,6 +112,31 @@ def create_agent(system_prompt: str, extra_tools: list | None = None):
     )
 
 
+def _get_callbacks():
+    """Build the list of callback handlers (JSONL logger + Langfuse if configured)."""
+    from logger import LLMLogger
+
+    callbacks = [LLMLogger()]
+
+    if os.environ.get("LANGFUSE_HOST"):
+        try:
+            from langfuse.langchain import CallbackHandler as LangfuseHandler
+
+            handler = LangfuseHandler()
+            callbacks.append(handler)
+        except Exception as e:
+            print(f"Warning: Langfuse init failed: {e}")
+
+    return callbacks
+
+
+def _flush_callbacks(callbacks):
+    """Flush any buffered callback handlers (e.g. Langfuse)."""
+    for cb in callbacks:
+        if hasattr(cb, "flush"):
+            cb.flush()
+
+
 def run_agent(agent, default_query: str = "Hallo, wat kan je voor me doen?", query: str | None = None):
     """Run an agent from the command line with logging and timing.
 
@@ -120,8 +146,6 @@ def run_agent(agent, default_query: str = "Hallo, wat kan je voor me doen?", que
         query: Explicit query string. If provided, CLI args are ignored and
             output is text-only (same as CLI arg mode).
     """
-    from logger import LLMLogger
-
     if query is not None:
         text_only = True
     elif len(sys.argv) > 1:
@@ -131,12 +155,17 @@ def run_agent(agent, default_query: str = "Hallo, wat kan je voor me doen?", que
         query = default_query
         text_only = False
 
-    logger = LLMLogger()
+    callbacks = _get_callbacks()
     start = time.time()
     result = agent.invoke(
         {"messages": [{"role": "user", "content": query}]},
-        config={"configurable": {"thread_id": "demo"}, "callbacks": [logger]},
+        config={
+            "configurable": {"thread_id": "demo"},
+            "callbacks": callbacks,
+            "recursion_limit": 100,
+        },
     )
+    _flush_callbacks(callbacks)
     elapsed = time.time() - start
     if text_only:
         content = result["messages"][-1].content

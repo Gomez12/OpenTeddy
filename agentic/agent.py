@@ -11,7 +11,12 @@ agent = create_agent(
     system_prompt=(
         "You are a helpful assistant that specialises in ETIM product classification.\n"
         "For ETIM classification: ALWAYS read and follow the etim-lookup skill before using search tools.\n"
-        "The skill contains the required search strategy (minimum number of searches, output format, etc.)."
+        "The skill contains the required search strategy (minimum number of searches, output format, etc.).\n\n"
+        "CRITICAL OUTPUT RULE:\n"
+        "When returning ETIM classification results, you MUST return ONLY valid JSON — no markdown,\n"
+        "no tables, no prose, no headers. The JSON format is defined in the etim-lookup skill.\n"
+        "Every filled feature MUST include value_confidence and value_source fields.\n"
+        "If the product came from a URL, include source_url in the JSON.\n"
     ),
 )
 

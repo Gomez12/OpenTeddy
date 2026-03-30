@@ -61,7 +61,7 @@ uv run uvicorn agentic.servers.chat_server:app \
 PIDS+=($!)
 
 # --- Frontend static server ---
-FRONTEND_PORT="${FRONTEND_PORT:-3000}"
+FRONTEND_PORT="${FRONTEND_PORT:-3010}"
 echo "Starting Frontend on port ${FRONTEND_PORT}..."
 python3 -m http.server "$FRONTEND_PORT" --directory frontend --bind 0.0.0.0 &
 PIDS+=($!)

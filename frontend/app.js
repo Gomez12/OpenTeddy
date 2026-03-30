@@ -141,15 +141,39 @@ function tryParseEtimJson(text) {
 function renderEtimCard(d, rawText) {
     const cardId = "etim-" + Math.random().toString(36).slice(2, 8);
 
-    const featuresHtml = (d.features || []).map(f =>
-        `<div class="etim-feature-item">
-            <div class="etim-feature-en">${escapeHtml(f.en || f)}</div>
-            <div class="etim-feature-nl">${escapeHtml(f.nl || "")}</div>
-        </div>`
-    ).join("");
+    const isFilled = !!(d.filled_features && d.filled_features.length);
+    const featuresList = isFilled ? d.filled_features : (d.features || []);
 
-    const synEnHtml = (d.synonyms_en || []).map(s => `<span class="etim-syn-tag">${escapeHtml(s)}</span>`).join("");
-    const synNlHtml = (d.synonyms_nl || []).map(s => `<span class="etim-syn-tag nl">${escapeHtml(s)}</span>`).join("");
+    const featuresHtml = featuresList.map(f => {
+        const code = f.code ? `<span class="etim-feature-code">${escapeHtml(f.code)}</span>` : "";
+        const label = escapeHtml(f.nl || f.en || f);
+        const sub = f.en && f.nl ? `<div class="etim-feature-en">${escapeHtml(f.en)}</div>` : "";
+
+        if (isFilled) {
+            const hasEvCode = f.value_code && f.value_label;
+            const displayVal = hasEvCode
+                ? f.value_label
+                : (f.value !== null && f.value !== undefined ? String(f.value) : "—");
+            const unit = f.unit && !hasEvCode ? ` ${escapeHtml(f.unit)}` : "";
+            const evBadge = hasEvCode ? `<span class="etim-ev-code">${escapeHtml(f.value_code)}</span>` : "";
+            const conf = f.value_confidence || "unknown";
+            const confClass = `etim-val-${conf}`;
+            const source = f.value_source ? `<div class="etim-val-source">${escapeHtml(f.value_source)}</div>` : "";
+            return `<div class="etim-feature-item etim-filled-feature">
+                <div class="etim-feature-header">${code}<span class="etim-feature-label">${label}</span></div>
+                <div class="etim-feature-value-row">
+                    ${evBadge}<span class="etim-feature-value ${confClass}">${escapeHtml(displayVal)}${unit}</span>
+                    <span class="etim-val-badge ${confClass}">${escapeHtml(conf)}</span>
+                </div>
+                ${source}${sub}
+            </div>`;
+        }
+
+        return `<div class="etim-feature-item">${code}<span class="etim-feature-label">${label}</span>${sub}</div>`;
+    }).join("");
+
+    const synNlHtml = (d.synonyms_nl || []).map(s => `<span class="etim-syn-tag">${escapeHtml(s)}</span>`).join("");
+    const synEnHtml = (d.synonyms_en || []).map(s => `<span class="etim-syn-tag en">${escapeHtml(s)}</span>`).join("");
 
     const hasSynonyms = (d.synonyms_en && d.synonyms_en.length) || (d.synonyms_nl && d.synonyms_nl.length);
 
@@ -161,42 +185,47 @@ function renderEtimCard(d, rawText) {
         ? `<div class="etim-reasoning">${escapeHtml(d.reasoning)}</div>`
         : "";
 
+    const sourceUrlHtml = d.source_url
+        ? `<div class="etim-source-url"><span class="etim-source-label">Bron:</span> <a href="${escapeHtml(d.source_url)}" target="_blank" rel="noopener">${escapeHtml(d.source_url)}</a></div>`
+        : "";
+
     return `
         <div class="etim-card">
+            ${sourceUrlHtml}
             <div class="etim-hero">
                 <div class="etim-eyebrow">
                     <span class="etim-group-badge">${escapeHtml(d.group_code)}</span>
-                    <span class="etim-group-name">${escapeHtml(d.group_description_en || "")} / ${escapeHtml(d.group_description_nl || "")}</span>
+                    <span class="etim-group-name">${escapeHtml(d.group_description_nl || d.group_description_en || "")}</span>
                     ${confidenceHtml}
                 </div>
                 <a class="etim-class-code" href="https://prod.etim-international.com/Class/Details?classId=${encodeURIComponent(d.class_code)}" target="_blank" rel="noopener">${escapeHtml(d.class_code)}</a>
-                <div class="etim-class-desc">${escapeHtml(d.class_description_en || "")}</div>
-                <div class="etim-class-desc-nl">${escapeHtml(d.class_description_nl || "")}</div>
+                <div class="etim-class-desc">${escapeHtml(d.class_description_nl || d.class_description_en || "")}</div>
+                <div class="etim-class-desc-sub">${escapeHtml(d.class_description_en || "")}</div>
                 ${reasoningHtml}
             </div>
 
-            ${d.features && d.features.length ? `
+            ${featuresList.length ? `
             <div class="etim-section">
                 <div class="etim-section-header">
-                    <span class="etim-section-title">Features</span>
-                    <span class="etim-section-count">${d.features.length}</span>
+                    <span class="etim-section-title">${isFilled ? "Kenmerken (ingevuld)" : "Kenmerken"}</span>
+                    <span class="etim-section-count">${featuresList.length}</span>
                 </div>
-                <div class="etim-features-grid">${featuresHtml}</div>
+                <div class="etim-features-grid ${isFilled ? 'etim-features-filled' : ''}">${featuresHtml}</div>
             </div>` : ""}
 
             ${hasSynonyms ? `
             <div class="etim-section">
                 <div class="etim-section-header">
-                    <span class="etim-section-title">Synonyms</span>
+                    <span class="etim-section-title">Synoniemen</span>
                     <div class="etim-lang-toggle">
-                        <button class="etim-lang-btn active" onclick="toggleEtimSyn('${cardId}','en',this)">EN</button>
-                        <button class="etim-lang-btn" onclick="toggleEtimSyn('${cardId}','nl',this)">NL</button>
-                        <button class="etim-lang-btn" onclick="toggleEtimSyn('${cardId}','all',this)">All</button>
+                        <button class="etim-lang-btn active" onclick="toggleEtimSyn('${cardId}','nl',this)">NL</button>
+                        <button class="etim-lang-btn" onclick="toggleEtimSyn('${cardId}','en',this)">EN</button>
+                        <button class="etim-lang-btn" onclick="toggleEtimSyn('${cardId}','all',this)">Alle</button>
                     </div>
                 </div>
-                <div class="etim-syn-wrap" id="${cardId}-syn-en">${synEnHtml}</div>
-                <div class="etim-syn-wrap" id="${cardId}-syn-nl" style="display:none">${synNlHtml}</div>
-                <div class="etim-syn-wrap" id="${cardId}-syn-all" style="display:none">${synEnHtml}${synNlHtml}</div>
+                <div class="etim-syn-wrap" id="${cardId}-syn-nl">${synNlHtml}</div>
+                <div class="etim-syn-wrap" id="${cardId}-syn-en" style="display:none">${synEnHtml}</div>
+                <div class="etim-syn-wrap" id="${cardId}-syn-all" style="display:none">${synNlHtml}${synEnHtml}</div>
             </div>` : ""}
 
             <div class="etim-raw-toggle">

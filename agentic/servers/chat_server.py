@@ -15,8 +15,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from baseagent import create_agent
-from logger import LLMLogger
+from baseagent import create_agent, _get_callbacks, _flush_callbacks
 
 app = FastAPI(title="OpenTeddy Chat", version="1.0.0")
 
@@ -56,11 +55,12 @@ class ChatResponse(BaseModel):
 @app.post("/api/chat")
 def chat(req: ChatRequest) -> ChatResponse:
     agent = _get_agent()
-    logger = LLMLogger()
+    callbacks = _get_callbacks()
     result = agent.invoke(
         {"messages": [{"role": "user", "content": req.message}]},
-        config={"configurable": {"thread_id": req.username}, "callbacks": [logger]},
+        config={"configurable": {"thread_id": req.username}, "callbacks": callbacks},
     )
+    _flush_callbacks(callbacks)
     content = result["messages"][-1].content
     if isinstance(content, list):
         text = "\n".join(block["text"] for block in content if block.get("type") == "text")

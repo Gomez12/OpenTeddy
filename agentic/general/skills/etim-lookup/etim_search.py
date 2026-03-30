@@ -126,21 +126,63 @@ def search_etim_classes(query: str, top_k: int = 50) -> str:
     results = table.search(vec).limit(top_k).to_pandas()
 
     lines = []
-    for _, row in results.iterrows():
+    for i, (_, row) in enumerate(results.iterrows()):
         dist = row.get("_distance", "?")
-        syns = row.get("synonyms_en", "")
-        syns_nl = row.get("synonyms_nl", "")
-        feats = row.get("features_text", "")
         entry = (
-            f"- {row['class_code']} (group: {row['group_code']}): "
+            f"- {row['class_code']} ({row['group_code']}): "
             f"{row['description_en']} / {row['description_nl']} "
-            f"(distance: {dist:.4f})"
+            f"(d:{dist:.4f})"
         )
-        if syns:
-            entry += f"\n  Synonyms EN: {syns}"
-        if syns_nl:
-            entry += f"\n  Synonyms NL: {syns_nl}"
-        if feats:
-            entry += f"\n  Features: {feats[:200]}"
+        # Only include details for top 10 to keep output manageable
+        if i < 10:
+            syns = row.get("synonyms_en", "")
+            syns_nl = row.get("synonyms_nl", "")
+            feats = row.get("features_text", "")
+            if syns:
+                entry += f"\n  syn-en: {syns[:120]}"
+            if syns_nl:
+                entry += f"\n  syn-nl: {syns_nl[:120]}"
+            if feats:
+                entry += f"\n  feat: {feats[:120]}"
         lines.append(entry)
     return f"Top {top_k} ETIM classes for '{query}':\n" + "\n".join(lines)
+
+
+def get_class_features(class_code: str) -> str:
+    """Get the full feature list for a specific ETIM class, including feature codes, types, and units.
+
+    Use this to retrieve the complete feature template for a class when you need to
+    fill in an ETIM card with values. Returns structured feature data with codes,
+    descriptions (EN/NL), value types, and unit abbreviations.
+
+    Args:
+        class_code: The ETIM class code (e.g. EC001959).
+
+    Returns:
+        JSON string with class info and all features, or an error message.
+    """
+    import json as _json
+
+    table = _get_table("etim_classes")
+    results = table.search().where(f"class_code = '{class_code}'").limit(1).to_pandas()
+
+    if results.empty:
+        return f"Class {class_code} not found."
+
+    row = results.iloc[0]
+    features_raw = row.get("features_json", "[]")
+    try:
+        features = _json.loads(features_raw)
+    except (TypeError, _json.JSONDecodeError):
+        features = []
+
+    result = {
+        "class_code": row["class_code"],
+        "group_code": row["group_code"],
+        "description_en": row["description_en"],
+        "description_nl": row["description_nl"],
+        "synonyms_en": row.get("synonyms_en", ""),
+        "synonyms_nl": row.get("synonyms_nl", ""),
+        "features": features,
+    }
+    return _json.dumps(result, ensure_ascii=False, indent=2)

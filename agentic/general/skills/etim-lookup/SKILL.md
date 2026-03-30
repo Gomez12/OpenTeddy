@@ -82,8 +82,10 @@ After completing all searches:
 
 ### Phase 4: Return your answer
 
-You MUST always return your answer as a single JSON object. No markdown, no extra text --
-only valid JSON. Use the following format exactly:
+**OUTPUT FORMAT IS MANDATORY — NO EXCEPTIONS:**
+You MUST return ONLY a single JSON object. No markdown tables, no headers, no explanatory
+text before or after the JSON. Your entire response must be parseable as JSON.
+NEVER use markdown tables or prose — ALWAYS use the JSON format below.
 
 ```json
 {
@@ -94,9 +96,9 @@ only valid JSON. Use the following format exactly:
   "class_description_en": "LED lamp/Multi-LED",
   "class_description_nl": "LED-lamp/Multi-LED",
   "features": [
-    {"en": "Lamp power", "nl": "Lampvermogen"},
-    {"en": "Lamp cap", "nl": "Lampfitting"},
-    {"en": "Colour temperature", "nl": "Kleurtemperatuur"}
+    {"code": "EF000007", "en": "Lamp power", "nl": "Lampvermogen"},
+    {"code": "EF000008", "en": "Lamp cap", "nl": "Lampfitting"},
+    {"code": "EF002169", "en": "Colour temperature", "nl": "Kleurtemperatuur"}
   ],
   "confidence": "high",
   "reasoning": "Found in 4/5 searches, best distance 0.28"
@@ -107,9 +109,124 @@ Field descriptions:
 - `group_code` / `class_code` -- The ETIM EG/EC codes
 - `group_description_en/nl` -- Group name in English and Dutch
 - `class_description_en/nl` -- Class name in English and Dutch
-- `features` -- Array of relevant ETIM features for this class, each with `en` and `nl` keys
+- `features` -- Array of relevant ETIM features for this class, each with `code` (EF######), `en` and `nl` keys
 - `confidence` -- One of: "high", "medium", "low"
 - `reasoning` -- Brief explanation of why this class was selected
+
+## Filled ETIM Card (ingevulde kaart)
+
+When the user asks for a **filled** or **ingevulde** ETIM card, follow these extra steps
+after finding the correct class:
+
+### Step 1: Get the full feature template
+
+Call `get_class_features(class_code)` to retrieve ALL features for the class, including
+their codes, types, units, and EN/NL descriptions.
+
+### Step 2: Gather product information
+
+Collect as much product data as possible from the source provided by the user:
+- If a URL: browse the page, read product specs, check linked PDFs, images, datasheets
+- If text: extract all technical specifications mentioned
+- Look for: voltages, currents, dimensions, weights, materials, IP ratings, temperatures,
+  power ratings, certifications, and any other technical values
+
+### Step 3: Fill in feature values
+
+For each feature in the class template, try to match it with information from the product:
+- `value`: The actual value found (number, text, or boolean true/false)
+- `value_confidence`: "high" (exact match from specs), "medium" (inferred from context),
+  "low" (educated guess), or "unknown" (no data found)
+- `value_source`: Brief note on where you found this value
+
+**CRITICAL — Allowed values:**
+Some features have an `allowed_values` array in their definition. This means the feature
+ONLY accepts one of those predefined ETIM values (EV codes). You MUST:
+- Choose a value from the `allowed_values` list — use the EV code as the value
+- NEVER fill in free text when `allowed_values` exists
+- If none of the allowed values match, set `value` to null and `value_confidence` to "unknown"
+- Include `value_code` with the EV code and `value_label` with the NL description
+
+For features WITHOUT `allowed_values`:
+- Numeric: fill in the number
+- Logical: fill in true or false
+- Alphanumeric: fill in free text
+- Range: fill in "min-max" format
+
+Leave `value` as null if you truly cannot determine it.
+
+### Step 4: Return the filled card
+
+**OUTPUT FORMAT IS MANDATORY — NO EXCEPTIONS:**
+Return ONLY a JSON object with `filled_features`. No markdown, no tables, no prose.
+Your entire response must be a single parseable JSON object.
+
+Include a `source_url` field if the product data came from a URL.
+
+Every feature in `filled_features` MUST have ALL of these fields:
+- `code`, `en`, `nl`, `type`, `unit`
+- `value` (the value, or null if unknown)
+- `value_confidence` ("high", "medium", "low", or "unknown") — ALWAYS required
+- `value_source` (where you found this value, e.g. "Specificatietabel op productpagina") — ALWAYS required
+- `value_code` and `value_label` (only when the value is an EV code from allowed_values)
+
+```json
+{
+  "group_code": "EG000017",
+  "group_description_en": "Lighting",
+  "group_description_nl": "Verlichting",
+  "class_code": "EC001959",
+  "class_description_en": "LED lamp/Multi-LED",
+  "class_description_nl": "LED-lamp/Multi-LED",
+  "confidence": "high",
+  "reasoning": "...",
+  "source_url": "https://example.com/product/123",
+  "filled_features": [
+    {
+      "code": "EF000010",
+      "en": "Design",
+      "nl": "Uitvoering",
+      "type": "Alphanumeric",
+      "unit": "",
+      "value": "EV003652",
+      "value_code": "EV003652",
+      "value_label": "Vloerstaand",
+      "value_confidence": "high",
+      "value_source": "Productfoto toont vloerstaand model"
+    },
+    {
+      "code": "EF000007",
+      "en": "Lamp power",
+      "nl": "Lampvermogen",
+      "type": "Numeric",
+      "unit": "W",
+      "value": 10,
+      "value_confidence": "high",
+      "value_source": "Specificatietabel: Vermogen = 10W"
+    },
+    {
+      "code": "EF001023",
+      "en": "Dimmable",
+      "nl": "Dimbaar",
+      "type": "Logical",
+      "unit": "",
+      "value": false,
+      "value_confidence": "low",
+      "value_source": "Niet vermeld op productpagina, aangenomen niet-dimbaar"
+    },
+    {
+      "code": "EF009999",
+      "en": "Some feature",
+      "nl": "Een kenmerk",
+      "type": "Numeric",
+      "unit": "mm",
+      "value": null,
+      "value_confidence": "unknown",
+      "value_source": "Niet gevonden in productinformatie"
+    }
+  ]
+}
+```
 
 ## Tips
 
